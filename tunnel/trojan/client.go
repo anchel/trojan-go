@@ -3,7 +3,9 @@ package trojan
 import (
 	"bytes"
 	"context"
+	"encoding/hex"
 	"net"
+	"net/http"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -51,20 +53,41 @@ func (c *OutboundConn) WriteHeader(payload []byte) (bool, error) {
 	var err error
 	written := false
 	c.headerWrittenOnce.Do(func() {
-		hash := c.user.Hash()
+		req, err := http.NewRequest("GET", "/wg", nil)
+		if err != nil {
+			return
+		}
+		req.Header.Set("X-HASH", c.user.Hash())
+		// req.Header.Set("X-META", c.metadata.String())
+		// log.Debug("req.Header", req.Header)
+		// hash := c.user.Hash()
 		buf := bytes.NewBuffer(make([]byte, 0, MaxPacketSize))
-		crlf := []byte{0x0d, 0x0a}
-		buf.Write([]byte(hash))
-		buf.Write(crlf)
+		// crlf := []byte{0x0d, 0x0a}
+		// buf.Write([]byte(hash))
+		// buf.Write(crlf)
 		c.metadata.WriteTo(buf)
-		buf.Write(crlf)
+		req.Header.Set("X-METADATA", hex.EncodeToString(buf.Bytes()))
+		log.Debug("req.Header", req.Header)
+
+		err = req.Write(c.Conn)
+		if err != nil {
+			log.Error("write header request fail", err)
+			return
+		}
+
+		// buf.Write(crlf)
 		if payload != nil {
-			buf.Write(payload)
+			// buf.Write(payload)
+			_, err = c.Conn.Write(payload)
+			if err != nil {
+				return
+			}
 		}
-		_, err = c.Conn.Write(buf.Bytes())
-		if err == nil {
-			written = true
-		}
+		// _, err = c.Conn.Write(buf.Bytes())
+		// if err == nil {
+		// 	written = true
+		// }
+		written = true
 	})
 	return written, err
 }

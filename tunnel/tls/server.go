@@ -148,17 +148,30 @@ func (s *Server) acceptLoop() {
 
 			// we use a real http header parser to mimic a real http server
 			rewindConn := common.NewRewindConn(tlsConn)
+			log.Debug("tls server 11111111111111111111111")
 			rewindConn.SetBufferSize(1024)
 			r := bufio.NewReader(rewindConn)
+			log.Debug("tls server 22222222222222222222222")
 			httpReq, err := http.ReadRequest(r)
+			log.Debug("tls server 333333333333333333333333", httpReq)
 			rewindConn.Rewind()
 			rewindConn.StopBuffering()
+			log.Debug("tls server 4444444444444444444444444")
 			if err != nil {
 				// this is not a http request. pass it to trojan protocol layer for further inspection
+				log.Debug("is http request err != nil")
 				s.connChan <- &transport.Conn{
 					Conn: rewindConn,
 				}
 			} else {
+				log.Debug("is http request err == nil", httpReq.Method, httpReq.Host, httpReq.RequestURI)
+				if httpReq.RequestURI == "/wg" {
+					log.Debug("is /wg handle trojan")
+					s.connChan <- &transport.Conn{
+						Conn: rewindConn,
+					}
+					return
+				}
 				if atomic.LoadInt32(&s.nextHTTP) != 1 {
 					// there is no websocket layer waiting for connections, redirect it
 					log.Error("incoming http request, but no websocket server is listening")

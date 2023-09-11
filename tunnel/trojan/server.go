@@ -1,10 +1,13 @@
 package trojan
 
 import (
+	"bufio"
+	"bytes"
 	"context"
+	"encoding/hex"
 	"fmt"
-	"io"
 	"net"
+	"net/http"
 	"sync/atomic"
 
 	"github.com/p4gefau1t/trojan-go/api"
@@ -63,11 +66,25 @@ func (c *InboundConn) Close() error {
 }
 
 func (c *InboundConn) Auth() error {
-	userHash := [56]byte{}
-	n, err := c.Conn.Read(userHash[:])
-	if err != nil || n != 56 {
-		return common.NewError("failed to read hash").Base(err)
+	httpReq, err := http.ReadRequest(bufio.NewReader(c.Conn))
+	if err != nil {
+		return err
 	}
+
+	hash := httpReq.Header.Get("X-HASH")
+	log.Debug("x-hash is", hash)
+	if hash == "" || len(hash) != 56 {
+		return common.NewError("failed to read hash")
+	}
+
+	userHash := []byte(hash)
+	// userHash := [56]byte{}
+	// n, err := c.Conn.Read(userHash[:])
+	// log.Debug("InboundConn Read", n, err)
+	// log.Debug(string(userHash[:n]))
+	// if err != nil || n != 56 {
+	// 	return common.NewError("failed to read hash").Base(err)
+	// }
 
 	valid, user := c.auth.AuthUser(string(userHash[:]))
 	if !valid {
@@ -87,21 +104,30 @@ func (c *InboundConn) Auth() error {
 		return common.NewError("ip limit reached")
 	}
 
-	crlf := [2]byte{}
-	_, err = io.ReadFull(c.Conn, crlf[:])
+	// crlf := [2]byte{}
+	// _, err = io.ReadFull(c.Conn, crlf[:])
+	// if err != nil {
+	// 	return err
+	// }
+
+	metadata := httpReq.Header.Get("X-METADATA")
+	if metadata == "" {
+		return common.NewError("failed to read metadata")
+	}
+	mdbytes, err := hex.DecodeString(metadata)
 	if err != nil {
-		return err
+		return common.NewError("failed to decode metadata")
 	}
 
 	c.metadata = &tunnel.Metadata{}
-	if err := c.metadata.ReadFrom(c.Conn); err != nil {
+	if err := c.metadata.ReadFrom(bytes.NewBuffer(mdbytes)); err != nil {
 		return err
 	}
-
-	_, err = io.ReadFull(c.Conn, crlf[:])
-	if err != nil {
-		return err
-	}
+	log.Debug("c.metadata", c.metadata)
+	// _, err = io.ReadFull(c.Conn, crlf[:])
+	// if err != nil {
+	// 	return err
+	// }
 	return nil
 }
 
