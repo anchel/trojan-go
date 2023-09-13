@@ -166,6 +166,9 @@ func (s *Server) acceptLoop() {
 			} else {
 				log.Debug("is http request err == nil", httpReq.Method, httpReq.Host, httpReq.RequestURI)
 				if httpReq.RequestURI == "/wg" {
+					buf := bytes.NewBuffer(make([]byte, 2048))
+					httpReq.Write(buf)
+					log.Debug(buf.String())
 					log.Debug("is /wg handle trojan")
 					s.connChan <- &transport.Conn{
 						Conn: rewindConn,
