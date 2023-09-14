@@ -30,6 +30,8 @@ const (
 	Mux       tunnel.Command = 0x7f
 )
 
+const RepeatCharString = "************************************************************"
+
 type OutboundConn struct {
 	// WARNING: do not change the order of these fields.
 	// 64-bit fields that use `sync/atomic` package functions
@@ -67,6 +69,13 @@ func (c *OutboundConn) WriteHeader(payload []byte) (bool, error) {
 		// buf.Write(crlf)
 		c.metadata.WriteTo(buf)
 		req.Header.Set("X-METADATA", hex.EncodeToString(buf.Bytes()))
+
+		currSecs := time.Now().Second()
+		secsBytes := make([]byte, currSecs)
+		copy(secsBytes, RepeatCharString)
+		log.Debug("X-SECS", currSecs, string(secsBytes))
+		req.Header.Set("X-SECS", string(secsBytes))
+
 		log.Debug("req.Header", req.Header)
 
 		err = req.Write(c.Conn)

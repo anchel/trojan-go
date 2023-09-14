@@ -221,6 +221,7 @@ func (s *Server) acceptLoop() {
 			case Associate:
 				defer newConn.Close()
 				associateAddr := tunnel.NewAddressFromHostPort("udp", s.localHost, s.localPort)
+				log.Debug("associateAddr", associateAddr.String())
 				if err := s.associate(newConn, associateAddr); err != nil {
 					log.Error(common.NewError("socks failed to respond to associate request").Base(err))
 					return
