@@ -148,15 +148,13 @@ func (s *Server) acceptLoop() {
 
 			// we use a real http header parser to mimic a real http server
 			rewindConn := common.NewRewindConn(tlsConn)
-			log.Debug("tls server 11111111111111111111111")
-			rewindConn.SetBufferSize(1024)
+
+			rewindConn.SetBufferSize(4096)
 			r := bufio.NewReader(rewindConn)
-			log.Debug("tls server 22222222222222222222222")
 			httpReq, err := http.ReadRequest(r)
-			log.Debug("tls server 333333333333333333333333", httpReq)
 			rewindConn.Rewind()
 			rewindConn.StopBuffering()
-			log.Debug("tls server 4444444444444444444444444")
+
 			if err != nil {
 				// this is not a http request. pass it to trojan protocol layer for further inspection
 				log.Debug("is http request err != nil")
@@ -166,9 +164,9 @@ func (s *Server) acceptLoop() {
 			} else {
 				log.Debug("is http request err == nil", httpReq.Method, httpReq.Host, httpReq.RequestURI)
 				if httpReq.RequestURI == "/wg" {
-					buf := bytes.NewBuffer(make([]byte, 2048))
-					httpReq.Write(buf)
-					log.Debug(buf.String())
+					// buf := bytes.NewBuffer(make([]byte, 2048))
+					// httpReq.Write(buf)
+					// log.Debug(buf.String())
 					log.Debug("is /wg handle trojan")
 					s.connChan <- &transport.Conn{
 						Conn: rewindConn,

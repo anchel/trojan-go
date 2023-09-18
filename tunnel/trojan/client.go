@@ -63,7 +63,7 @@ func (c *OutboundConn) WriteHeader(payload []byte) (bool, error) {
 		// req.Header.Set("X-META", c.metadata.String())
 		// log.Debug("req.Header", req.Header)
 		// hash := c.user.Hash()
-		buf := bytes.NewBuffer(make([]byte, 0, MaxPacketSize))
+		buf := bytes.NewBuffer(make([]byte, 0, 256))
 		// crlf := []byte{0x0d, 0x0a}
 		// buf.Write([]byte(hash))
 		// buf.Write(crlf)

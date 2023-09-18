@@ -65,70 +65,61 @@ func (c *InboundConn) Close() error {
 	return c.Conn.Close()
 }
 
-func (c *InboundConn) Auth() error {
+func (c *InboundConn) Auth() (int, error) {
 	httpReq, err := http.ReadRequest(bufio.NewReader(c.Conn))
 	if err != nil {
-		return err
+		return 0, err
 	}
 
 	hash := httpReq.Header.Get("X-HASH")
 	log.Debug("x-hash is", hash)
 	if hash == "" || len(hash) != 56 {
-		return common.NewError("failed to read hash")
+		return 0, common.NewError("failed to read hash")
 	}
 
 	userHash := []byte(hash)
-	// userHash := [56]byte{}
-	// n, err := c.Conn.Read(userHash[:])
-	// log.Debug("InboundConn Read", n, err)
-	// log.Debug(string(userHash[:n]))
-	// if err != nil || n != 56 {
-	// 	return common.NewError("failed to read hash").Base(err)
-	// }
 
 	valid, user := c.auth.AuthUser(string(userHash[:]))
 	if !valid {
-		return common.NewError("invalid hash:" + string(userHash[:]))
+		return 0, common.NewError("invalid hash:" + string(userHash[:]))
 	}
 	c.hash = string(userHash[:])
 	c.user = user
 
 	ip, _, err := net.SplitHostPort(c.Conn.RemoteAddr().String())
 	if err != nil {
-		return common.NewError("failed to parse host:" + c.Conn.RemoteAddr().String()).Base(err)
+		return 0, common.NewError("failed to parse host:" + c.Conn.RemoteAddr().String()).Base(err)
 	}
 
 	c.ip = ip
 	ok := user.AddIP(ip)
 	if !ok {
-		return common.NewError("ip limit reached")
+		return 0, common.NewError("ip limit reached")
 	}
-
-	// crlf := [2]byte{}
-	// _, err = io.ReadFull(c.Conn, crlf[:])
-	// if err != nil {
-	// 	return err
-	// }
 
 	metadata := httpReq.Header.Get("X-METADATA")
 	if metadata == "" {
-		return common.NewError("failed to read metadata")
+		return 0, common.NewError("failed to read metadata")
 	}
 	mdbytes, err := hex.DecodeString(metadata)
 	if err != nil {
-		return common.NewError("failed to decode metadata")
+		return 0, common.NewError("failed to decode metadata")
 	}
 
 	c.metadata = &tunnel.Metadata{}
 	if err := c.metadata.ReadFrom(bytes.NewBuffer(mdbytes)); err != nil {
-		return err
+		return 0, err
 	}
 	log.Debug("c.metadata", c.metadata)
-	// _, err = io.ReadFull(c.Conn, crlf[:])
-	// if err != nil {
-	// 	return err
-	// }
-	return nil
+
+	buf := bytes.NewBuffer(make([]byte, 0, 256))
+	err = httpReq.Write(buf)
+	if err != nil {
+		return 0, err
+	}
+	log.Debug("httpReq Length", buf.Len())
+
+	return buf.Len(), nil
 }
 
 // Server is a trojan tunnel server
@@ -163,7 +154,7 @@ func (s *Server) acceptLoop() {
 		}
 		go func(conn tunnel.Conn) {
 			rewindConn := common.NewRewindConn(conn)
-			rewindConn.SetBufferSize(512)
+			rewindConn.SetBufferSize(4096)
 			defer rewindConn.StopBuffering()
 
 			inboundConn := &InboundConn{
@@ -171,7 +162,8 @@ func (s *Server) acceptLoop() {
 				auth: s.auth,
 			}
 
-			if err := inboundConn.Auth(); err != nil {
+			discard, err := inboundConn.Auth()
+			if err != nil {
 				rewindConn.Rewind()
 				rewindConn.StopBuffering()
 				log.Warn(common.NewError("connection with invalid trojan header from " + rewindConn.RemoteAddr().String()).Base(err))
@@ -182,7 +174,19 @@ func (s *Server) acceptLoop() {
 				return
 			}
 
+			// 因为读取httpReq的时候，会多读一些字节，所以必须回退，然后丢弃httpReq本身占的字节
+			log.Debug("discard", discard)
+			rewindConn.Rewind()
 			rewindConn.StopBuffering()
+			if discard > 0 {
+				m, err := rewindConn.Discard(discard)
+				if err != nil {
+					log.Error("rewindConn.Discard", discard, m, err)
+				} else {
+					log.Debug("rewindConn.Discard", discard, m)
+				}
+			}
+
 			switch inboundConn.metadata.Command {
 			case Connect:
 				if inboundConn.metadata.DomainName == "MUX_CONN" {
